@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube频道批量下载器</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 32px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .step {
+      margin-bottom: 30px;
+      padding: 25px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fafafa;
+      transition: all 0.3s ease;
+    }
+
+    .step:hover {
+      border-color: #667eea;
+      background: white;
+    }
+
+    .step h2 {
+      font-size: 20px;
+      margin-bottom: 15px;
+      color: #444;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      background: #667eea;
+      color: white;
+      border-radius: 50%;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    textarea {
+      width: 100%;
+      height: 120px;
+      padding: 15px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      resize: vertical;
+      font-size: 14px;
+      font-family: monospace;
+      transition: border-color 0.3s;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      margin-top: 10px;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .controls label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .controls input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .controls select {
+      padding: 8px 15px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: border-color 0.3s;
+    }
+
+    .controls select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    #videoList {
+      max-height: 500px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      background: white;
+    }
+
+    .video-item {
+      display: flex;
+      align-items: center;
+      padding: 15px;
+      border-bottom: 1px solid #eee;
+      transition: background 0.2s;
+    }
+
+    .video-item:hover {
+      background: #f5f5f5;
+    }
+
+    .video-item:last-child {
+      border-bottom: none;
+    }
+
+    .video-item input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-right: 15px;
+      cursor: pointer;
+    }
+
+    .video-item img {
+      width: 160px;
+      height: 90px;
+      object-fit: cover;
+      border-radius: 6px;
+      margin-right: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .video-info {
+      flex: 1;
+    }
+
+    .video-info h3 {
+      font-size: 15px;
+      margin-bottom: 8px;
+      color: #333;
+      line-height: 1.4;
+    }
+
+    .video-info span {
+      font-size: 13px;
+      color: #999;
+    }
+
+    .video-info .video-meta {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .video-info .video-date {
+      color: #666;
+      font-size: 13px;
+    }
+
+    .progress-item {
+      padding: 15px;
+      margin-bottom: 15px;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      background: white;
+    }
+
+    .progress-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      color: #333;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 24px;
+      background: #f0f0f0;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 8px;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      transition: width 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: #666;
+    }
+
+    .status-icon {
+      font-size: 20px;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #999;
+    }
+
+    .empty-state-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 20px;
+      margin-top: 10px;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 6px;
+    }
+
+    .stat-item {
+      flex: 1;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #667eea;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    /* 加载中文本动画 */
+    .loading-text {
+      color: #667eea;
+      font-style: italic;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* 详情加载通知样式 */
+    #details-loading-notice {
+      animation: slideDown 0.3s ease-out;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 YouTube频道批量下载器</h1>
+    <p class="subtitle">轻松批量下载YouTube频道视频，支持多频道、多画质选择</p>
+
+    <!-- 步骤1: 输入频道URL -->
+    <section class="step">
+      <h2><span class="step-number">1</span> 输入频道URL</h2>
+      <textarea id="channelUrls" placeholder="请输入YouTube频道URL（每行一个）
+
+示例：
+https://www.youtube.com/@channelname
+https://www.youtube.com/c/channelname
+https://www.youtube.com/channel/UCxxxxxxxxx"></textarea>
+      <button id="fetchBtn" onclick="fetchVideos()">
+        <span id="fetchBtnText">🔍 获取视频列表</span>
+      </button>
+    </section>
+
+    <!-- 步骤2: 选择视频 -->
+    <section class="step" id="videoSection" style="display:none;">
+      <h2><span class="step-number">2</span> 选择要下载的视频</h2>
+      <div class="controls">
+        <label>
+          <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+          <strong>全选</strong> (<span id="videoCount">0</span> 个视频)
+        </label>
+        <select id="quality">
+          <option value="1080p">🎥 1080p 高清</option>
+          <option value="720p" selected>🎥 720p 标清（推荐）</option>
+          <option value="480p">🎥 480p 普清</option>
+        </select>
+        <button id="downloadBtn" onclick="startDownload()">⬇️ 开始下载</button>
+      </div>
+      <div id="videoList"></div>
+    </section>
+
+    <!-- 步骤3: 下载进度 -->
+    <section class="step" id="progressSection" style="display:none;">
+      <h2><span class="step-number">3</span> 下载进度</h2>
+      <div class="stats">
+        <div class="stat-item">
+          <div class="stat-value" id="totalCount">0</div>
+          <div class="stat-label">总数</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="completedCount">0</div>
+          <div class="stat-label">已完成</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="failedCount">0</div>
+          <div class="stat-label">失败</div>
+        </div>
+      </div>
+      <div id="downloadProgress"></div>
+    </section>
+  </div>
+
+  <script>
+    // Socket.io连接
+    const socket = io();
+
+    // 全局变量
+    let allVideos = [];
+
+    // ==========================================
+    // 功能函数：格式化时长
+    // ==========================================
+    function formatDuration(seconds) {
+      if (!seconds) return '未知时长';
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+
+      if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+      return `${minutes}:${String(secs).padStart(2, '0')}`;
+    }
+
+    // ==========================================
+    // 功能函数：格式化日期
+    // ==========================================
+    function formatDate(dateString) {
+      if (!dateString) return '未知日期';
+
+      // 解析YYYYMMDD格式
+      const year = dateString.substring(0, 4);
+      const month = dateString.substring(4, 6);
+      const day = dateString.substring(6, 8);
+
+      // 返回友好格式
+      return `${year}年${month}月${day}日`;
+    }
+
+    // ==========================================
+    // 功能函数：获取视频列表
+    // ==========================================
+    async function fetchVideos() {
+      const urls = document.getElementById('channelUrls').value
+        .split('\n')
+        .filter(url => url.trim());
+
+      if (urls.length === 0) {
+        alert('⚠️ 请输入至少一个频道URL');
+        return;
+      }
+
+      const fetchBtn = document.getElementById('fetchBtn');
+      const fetchBtnText = document.getElementById('fetchBtnText');
+
+      fetchBtn.disabled = true;
+      fetchBtnText.innerHTML = '<span class="loading"></span> 快速获取基本信息中（15-30秒）...';
+
+      try {
+        const response = await fetch('/api/channels/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channelUrls: urls })
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.channels.length > 0) {
+          displayVideos(result.channels);
+          document.getElementById('videoSection').style.display = 'block';
+          showDetailsLoadingNotice(result.totalVideos);
+          alert(`✅ 已加载 ${result.totalVideos} 个视频！\n\n日期和时长信息正在后台加载，请稍候...`);
+        } else {
+          alert('❌ 未能获取到任何视频，请检查频道URL是否正确');
+        }
+      } catch (error) {
+        console.error('获取视频列表失败:', error);
+        alert('❌ 获取视频列表失败: ' + error.message);
+      } finally {
+        fetchBtn.disabled = false;
+        fetchBtnText.innerHTML = '🔍 获取视频列表';
+      }
+    }
+
+    // ==========================================
+    // 功能函数：显示视频列表
+    // ==========================================
+    function displayVideos(channels) {
+      const videoList = document.getElementById('videoList');
+      videoList.innerHTML = '';
+
+      allVideos = [];
+
+      // 合并所有频道的视频
+      channels.forEach(channel => {
+        if (channel.videos && channel.videos.length > 0) {
+          allVideos = allVideos.concat(channel.videos);
+        }
+      });
+
+      document.getElementById('videoCount').textContent = allVideos.length;
+
+      if (allVideos.length === 0) {
+        videoList.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <p>未找到任何视频</p>
+          </div>
+        `;
+        return;
+      }
+
+      // 渲染每个视频
+      allVideos.forEach(video => {
+        const div = document.createElement('div');
+        div.className = 'video-item';
+        div.id = `video-${video.id}`;
+
+        // 判断是否有详细信息
+        const durationDisplay = video.duration !== null
+          ? formatDuration(video.duration)
+          : '<span class="loading-text">加载中...</span>';
+
+        const dateDisplay = video.upload_date !== null
+          ? formatDate(video.upload_date)
+          : '<span class="loading-text">加载中...</span>';
+
+        div.innerHTML = `
+          <input type="checkbox" class="video-checkbox" data-video='${JSON.stringify(video)}'>
+          <img src="${video.thumbnail}" alt="${video.title}" onerror="this.src='https://via.placeholder.com/160x90?text=无缩略图'">
+          <div class="video-info">
+            <h3>${video.title}</h3>
+            <div class="video-meta">
+              <span id="duration-${video.id}">⏱️ ${durationDisplay}</span>
+              <span class="video-date" id="date-${video.id}">📅 ${dateDisplay}</span>
+            </div>
+          </div>
+        `;
+        videoList.appendChild(div);
+      });
+    }
+
+    // ==========================================
+    // 功能函数：显示详情加载通知
+    // ==========================================
+    function showDetailsLoadingNotice(totalVideos) {
+      // 在视频列表上方显示加载进度条
+      const videoSection = document.getElementById('videoSection');
+
+      // 检查是否已存在通知
+      let noticeDiv = document.getElementById('details-loading-notice');
+      if (!noticeDiv) {
+        noticeDiv = document.createElement('div');
+        noticeDiv.id = 'details-loading-notice';
+        noticeDiv.style.cssText = `
+          padding: 15px;
+          margin-bottom: 15px;
+          background: #fff3cd;
+          border: 1px solid #ffc107;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        `;
+
+        noticeDiv.innerHTML = `
+          <div>
+            <strong>📡 正在后台加载详细信息</strong>
+            <div style="margin-top: 5px; font-size: 13px; color: #666;">
+              进度: <span id="details-progress-text">0/${totalVideos}</span>
+            </div>
+          </div>
+          <button onclick="cancelDetailsLoading()" style="padding: 6px 12px; font-size: 13px;">取消</button>
+        `;
+
+        videoSection.insertBefore(noticeDiv, document.getElementById('videoList'));
+      }
+    }
+
+    // 移除加载通知
+    function removeDetailsLoadingNotice() {
+      const noticeDiv = document.getElementById('details-loading-notice');
+      if (noticeDiv) {
+        noticeDiv.remove();
+      }
+    }
+
+    // 取消详情加载
+    function cancelDetailsLoading() {
+      if (currentTaskId) {
+        socket.emit('video:details:cancel', { taskId: currentTaskId });
+        removeDetailsLoadingNotice();
+        alert('⚠️ 已取消详细信息加载');
+      }
+    }
+
+    // ==========================================
+    // 功能函数：全选/取消全选
+    // ==========================================
+    function toggleSelectAll() {
+      const selectAll = document.getElementById('selectAll');
+      const checkboxes = document.querySelectorAll('.video-checkbox');
+
+      checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+      });
+    }
+
+    // ==========================================
+    // 功能函数：开始下载
+    // ==========================================
+    async function startDownload() {
+      const checkboxes = document.querySelectorAll('.video-checkbox:checked');
+      const videos = Array.from(checkboxes).map(cb => JSON.parse(cb.dataset.video));
+
+      if (videos.length === 0) {
+        alert('⚠️ 请至少选择一个视频');
+        return;
+      }
+
+      const quality = document.getElementById('quality').value;
+
+      try {
+        const response = await fetch('/api/downloads/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videos, quality })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          document.getElementById('progressSection').style.display = 'block';
+          document.getElementById('totalCount').textContent = videos.length;
+          document.getElementById('completedCount').textContent = '0';
+          document.getElementById('failedCount').textContent = '0';
+
+          // 滚动到进度区域
+          document.getElementById('progressSection').scrollIntoView({ behavior: 'smooth' });
+
+          alert(`✅ 已开始下载 ${result.count} 个视频！`);
+        }
+      } catch (error) {
+        console.error('启动下载失败:', error);
+        alert('❌ 启动下载失败: ' + error.message);
+      }
+    }
+
+    // ==========================================
+    // Socket.io事件：下载进度更新
+    // ==========================================
+    socket.on('download:progress', (data) => {
+      updateProgressUI(data);
+    });
+
+    // ==========================================
+    // 功能函数：更新进度UI
+    // ==========================================
+    function updateProgressUI(data) {
+      let progressDiv = document.getElementById(`progress-${data.id}`);
+
+      if (!progressDiv) {
+        progressDiv = document.createElement('div');
+        progressDiv.id = `progress-${data.id}`;
+        progressDiv.className = 'progress-item';
+        document.getElementById('downloadProgress').appendChild(progressDiv);
+      }
+
+      const statusIcon = data.status === 'completed' ? '✅' :
+                        data.status === 'failed' ? '❌' : '⬇️';
+
+      const progress = Math.round(data.progress || 0);
+
+      progressDiv.innerHTML = `
+        <div class="progress-title">
+          <span class="status-icon">${statusIcon}</span>
+          <span>${data.title}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: ${progress}%">
+            ${progress > 10 ? progress + '%' : ''}
+          </div>
+        </div>
+        <div class="progress-info">
+          <span>${progress}%</span>
+          <span>${data.speed || ''}</span>
+        </div>
+      `;
+
+      // 更新统计
+      updateStats();
+    }
+
+    // ==========================================
+    // 功能函数：更新统计数据
+    // ==========================================
+    function updateStats() {
+      const progressItems = document.querySelectorAll('.progress-item');
+      let completed = 0;
+      let failed = 0;
+
+      progressItems.forEach(item => {
+        const icon = item.querySelector('.status-icon').textContent;
+        if (icon === '✅') completed++;
+        if (icon === '❌') failed++;
+      });
+
+      document.getElementById('completedCount').textContent = completed;
+      document.getElementById('failedCount').textContent = failed;
+    }
+
+    // ==========================================
+    // Socket.io连接事件
+    // ==========================================
+    socket.on('connect', () => {
+      console.log('已连接到服务器');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('与服务器断开连接');
+    });
+
+    // ==========================================
+    // Socket.io事件：视频详情更新
+    // ==========================================
+    let currentTaskId = null;
+    let detailsProgress = { current: 0, total: 0, completed: 0, failed: 0 };
+
+    // 详情获取开始
+    socket.on('video:details:start', (data) => {
+      console.log('开始获取视频详情:', data);
+      currentTaskId = data.taskId;
+      detailsProgress = {
+        current: 0,
+        total: data.total,
+        completed: 0,
+        failed: 0
+      };
+    });
+
+    // 单个视频详情更新
+    socket.on('video:details:update', (data) => {
+      const { videoId, details, progress, error } = data;
+
+      // 更新进度
+      if (progress) {
+        detailsProgress = progress;
+        updateDetailsProgress(progress);
+      }
+
+      // 更新UI
+      if (!error && details) {
+        updateVideoDetails(videoId, details);
+      } else if (error) {
+        markVideoDetailsError(videoId);
+      }
+    });
+
+    // 详情获取完成
+    socket.on('video:details:complete', (data) => {
+      console.log('视频详情获取完成:', data);
+      removeDetailsLoadingNotice();
+      currentTaskId = null;
+
+      alert(`✅ 详细信息加载完成！\n\n成功: ${data.completed}个\n失败: ${data.failed}个`);
+    });
+
+    // 任务取消确认
+    socket.on('video:details:cancelled', (data) => {
+      console.log('任务已取消:', data);
+      if (data.success) {
+        removeDetailsLoadingNotice();
+        currentTaskId = null;
+      }
+    });
+
+    // ==========================================
+    // 功能函数：更新详情加载进度
+    // ==========================================
+    function updateDetailsProgress(progress) {
+      const progressText = document.getElementById('details-progress-text');
+      if (progressText) {
+        progressText.textContent = `${progress.current}/${progress.total} (成功: ${progress.completed}, 失败: ${progress.failed})`;
+      }
+    }
+
+    // ==========================================
+    // 功能函数：更新单个视频的详细信息
+    // ==========================================
+    function updateVideoDetails(videoId, details) {
+      // 更新时长
+      const durationElem = document.getElementById(`duration-${videoId}`);
+      if (durationElem) {
+        durationElem.innerHTML = `⏱️ ${formatDuration(details.duration)}`;
+      }
+
+      // 更新日期
+      const dateElem = document.getElementById(`date-${videoId}`);
+      if (dateElem) {
+        dateElem.innerHTML = `📅 ${formatDate(details.upload_date)}`;
+      }
+
+      // 更新 allVideos 数组中的数据
+      const videoIndex = allVideos.findIndex(v => v.id === videoId);
+      if (videoIndex !== -1) {
+        allVideos[videoIndex].duration = details.duration;
+        allVideos[videoIndex].upload_date = details.upload_date;
+        allVideos[videoIndex].detailsLoading = false;
+
+        // 更新 checkbox 的 data-video 属性
+        const checkbox = document.querySelector(`input[data-video*='"id":"${videoId}"']`);
+        if (checkbox) {
+          checkbox.setAttribute('data-video', JSON.stringify(allVideos[videoIndex]));
+        }
+      }
+    }
+
+    // ==========================================
+    // 功能函数：标记视频详情获取失败
+    // ==========================================
+    function markVideoDetailsError(videoId) {
+      const durationElem = document.getElementById(`duration-${videoId}`);
+      if (durationElem) {
+        durationElem.innerHTML = `⏱️ <span style="color: #999;">获取失败</span>`;
+      }
+
+      const dateElem = document.getElementById(`date-${videoId}`);
+      if (dateElem) {
+        dateElem.innerHTML = `📅 <span style="color: #999;">获取失败</span>`;
+      }
+    }
+
+    // ==========================================
+    // 页面卸载时取消任务
+    // ==========================================
+    window.addEventListener('beforeunload', () => {
+      if (currentTaskId) {
+        // 使用 sendBeacon 发送取消请求
+        navigator.sendBeacon('/api/channels/cancel-details', JSON.stringify({ taskId: currentTaskId }));
+      }
+    });
+
+    // 页面加载完成提示
+    console.log('%c🎬 YouTube频道批量下载器', 'color: #667eea; font-size: 24px; font-weight: bold;');
+    console.log('%c已就绪！开始输入频道URL吧~', 'color: #764ba2; font-size: 14px;');
+  </script>
+</body>
+</html>
