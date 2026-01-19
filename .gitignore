@@ -1,6 +1,11 @@
 # 依赖
 node_modules/
 
+# 数据文件（保留目录结构）
+data/*.json
+data/*.json.tmp
+data/*.json.backup.*
+
 # 下载的视频和图片文件
 downloads/
 *.mp4
@@ -11,6 +16,7 @@ downloads/
 # 日志文件
 *.log
 npm-debug.log*
+logs/
 
 # 系统文件
 .DS_Store
@@ -27,3 +33,7 @@ Thumbs.db
 # 临时文件
 *.tmp
 *.temp
+
+# PM2相关
+.pm2/
+pids/

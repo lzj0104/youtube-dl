@@ -1,9 +1,25 @@
+require('dotenv').config();  // 加载 .env 文件
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { spawn } = require('child_process');
 const cors = require('cors');
 const path = require('path');
+
+// 导入新模块
+const config = require('./src/config');
+const Storage = require('./src/db');
+const MonitoringScheduler = require('./src/scheduler');
+const DownloadQueue = require('./src/queue');
+const CleanupService = require('./src/cleanup');
+const {
+  fetchChannelVideosBasic,
+  fetchVideoDetails,
+  fetchVideosDetailsAsync,
+  cancelDetailFetchTask
+} = require('./src/utils');
+const TelegramService = require('./src/telegram');
 
 // 初始化Express应用
 const app = express();
@@ -18,6 +34,10 @@ app.use(express.static('public'));
 // 内存数据存储
 const channels = new Map();   // 存储频道数据
 const downloads = new Map();  // 存储下载任务
+
+// 初始化服务实例（稍后启动）
+const storage = new Storage(config.database.path);
+let scheduler, queueManager, cleanupService, telegramService;
 
 // =============================================
 // 核心函数：获取频道视频列表
@@ -81,250 +101,8 @@ function fetchChannelVideos(channelUrl) {
 }
 
 // =============================================
-// 阶段1：快速获取基本视频信息（使用 --flat-playlist）
-// =============================================
-function fetchChannelVideosBasic(channelUrl) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '--flat-playlist',      // 快速模式：仅获取基本信息
-      '--dump-json',
-      '--skip-download',
-      '--ignore-errors',
-      '--no-warnings',
-      '--playlist-end', '30',
-      channelUrl
-    ];
-
-    console.log(`[阶段1] 快速获取频道基本信息: ${channelUrl}`);
-    const proc = spawn('yt-dlp', args);
-    let output = '';
-    let errorOutput = '';
-
-    proc.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        console.error(`获取频道失败: ${errorOutput}`);
-        reject(new Error(`获取频道失败: ${channelUrl}`));
-        return;
-      }
-
-      try {
-        const lines = output.trim().split('\n').filter(line => line.trim());
-        const videos = lines.map(line => {
-          const data = JSON.parse(line);
-          return {
-            id: data.id,
-            title: data.title || data.url || '未知标题',
-            url: `https://youtube.com/watch?v=${data.id}`,
-            thumbnail: data.thumbnails && data.thumbnails.length > 0
-              ? data.thumbnails[0].url
-              : `https://i.ytimg.com/vi/${data.id}/mqdefault.jpg`,
-            duration: null,           // 阶段1不包含时长
-            upload_date: null,        // 阶段1不包含日期
-            detailsLoading: true      // 标记：详细信息加载中
-          };
-        });
-
-        console.log(`[阶段1] 成功获取 ${videos.length} 个视频的基本信息`);
-        resolve(videos);
-      } catch (error) {
-        console.error(`解析视频数据失败: ${error.message}`);
-        reject(new Error(`解析视频数据失败: ${error.message}`));
-      }
-    });
-  });
-}
-
-// =============================================
-// 阶段2：获取单个视频的详细信息（日期、时长）
-// =============================================
-function fetchVideoDetails(videoId, videoUrl) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '--dump-json',
-      '--skip-download',
-      '--no-warnings',
-      videoUrl
-    ];
-
-    console.log(`[阶段2] 获取视频详细信息: ${videoId}`);
-    const proc = spawn('yt-dlp', args);
-    let output = '';
-    let errorOutput = '';
-
-    // 设置超时：单个视频最多60秒
-    const timeout = setTimeout(() => {
-      proc.kill();
-      reject(new Error('获取详细信息超时'));
-    }, 60000);
-
-    proc.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      clearTimeout(timeout);
-
-      if (code !== 0) {
-        console.error(`获取视频详情失败 [${videoId}]: ${errorOutput}`);
-        reject(new Error(`获取视频详情失败: ${videoId}`));
-        return;
-      }
-
-      try {
-        const data = JSON.parse(output.trim());
-        resolve({
-          id: videoId,
-          duration: data.duration || 0,
-          upload_date: data.upload_date || null
-        });
-      } catch (error) {
-        console.error(`解析视频详情失败 [${videoId}]: ${error.message}`);
-        reject(error);
-      }
-    });
-  });
-}
-
-// =============================================
-// 阶段2控制器：批量异步获取详细信息
-// =============================================
-const activeDetailFetchTasks = new Map(); // 存储活跃的详情获取任务
-
-async function fetchVideosDetailsAsync(channelId, videos, socketId = null) {
-  const taskId = `details_${channelId}_${Date.now()}`;
-
-  console.log(`[阶段2] 开始异步获取 ${videos.length} 个视频的详细信息`);
-
-  // 记录任务
-  activeDetailFetchTasks.set(taskId, {
-    channelId,
-    total: videos.length,
-    completed: 0,
-    failed: 0,
-    cancelled: false
-  });
-
-  // 并发控制：同时最多3个请求
-  const CONCURRENT_LIMIT = 3;
-  let index = 0;
-  let completed = 0;
-  let failed = 0;
-
-  // 通知开始
-  io.emit('video:details:start', {
-    channelId,
-    taskId,
-    total: videos.length
-  });
-
-  // 并发处理函数
-  const processNext = async () => {
-    if (index >= videos.length) return;
-
-    const task = activeDetailFetchTasks.get(taskId);
-    if (task && task.cancelled) {
-      console.log(`[阶段2] 任务已取消: ${taskId}`);
-      return;
-    }
-
-    const currentIndex = index++;
-    const video = videos[currentIndex];
-
-    try {
-      const details = await fetchVideoDetails(video.id, video.url);
-
-      completed++;
-
-      // 实时推送更新
-      io.emit('video:details:update', {
-        channelId,
-        taskId,
-        videoId: video.id,
-        details: {
-          duration: details.duration,
-          upload_date: details.upload_date
-        },
-        progress: {
-          current: completed + failed,
-          total: videos.length,
-          completed,
-          failed
-        }
-      });
-
-      console.log(`[阶段2] 进度: ${completed + failed}/${videos.length} (成功: ${completed}, 失败: ${failed})`);
-
-    } catch (error) {
-      failed++;
-      console.error(`[阶段2] 获取详情失败 [${video.id}]: ${error.message}`);
-
-      // 推送失败通知
-      io.emit('video:details:update', {
-        channelId,
-        taskId,
-        videoId: video.id,
-        error: true,
-        progress: {
-          current: completed + failed,
-          total: videos.length,
-          completed,
-          failed
-        }
-      });
-    }
-
-    // 继续处理下一个
-    if (index < videos.length) {
-      await processNext();
-    }
-  };
-
-  // 启动并发任务
-  const workers = [];
-  for (let i = 0; i < CONCURRENT_LIMIT; i++) {
-    workers.push(processNext());
-  }
-
-  await Promise.all(workers);
-
-  // 完成通知
-  io.emit('video:details:complete', {
-    channelId,
-    taskId,
-    total: videos.length,
-    completed,
-    failed
-  });
-
-  console.log(`[阶段2] 完成！总数: ${videos.length}, 成功: ${completed}, 失败: ${failed}`);
-
-  // 清理任务记录
-  activeDetailFetchTasks.delete(taskId);
-}
-
-// 取消详情获取任务
-function cancelDetailFetchTask(taskId) {
-  const task = activeDetailFetchTasks.get(taskId);
-  if (task) {
-    task.cancelled = true;
-    console.log(`[阶段2] 取消任务: ${taskId}`);
-    return true;
-  }
-  return false;
-}
-
+// 注意：fetchChannelVideosBasic, fetchVideoDetails, fetchVideosDetailsAsync
+// 已移至 src/utils.js，通过顶部 require 导入
 // =============================================
 // 核心函数：下载单个视频
 // =============================================
@@ -576,6 +354,240 @@ app.get('/api/downloads/list', (req, res) => {
 });
 
 // =============================================
+// 监控系统 API 端点
+// =============================================
+
+// 获取监控状态
+app.get('/api/monitor/status', async (req, res) => {
+  try {
+    const channels = await storage.getChannels();
+    const queueStatus = queueManager ? await queueManager.getStatus() : null;
+    const schedulerStatus = scheduler ? scheduler.getStatus() : null;
+    const cleanupStats = cleanupService ? await cleanupService.getStats() : null;
+
+    res.json({
+      success: true,
+      monitoring: {
+        ...config.monitoring,
+        status: schedulerStatus
+      },
+      queue: queueStatus,
+      cleanup: cleanupStats,
+      channels
+    });
+  } catch (error) {
+    console.error('获取监控状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// 添加监控频道
+app.post('/api/monitor/channels/add', async (req, res) => {
+  try {
+    const { url, name } = req.body;
+
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供频道URL'
+      });
+    }
+
+    const channelId = await storage.addChannel(url.trim(), name?.trim());
+
+    res.json({
+      success: true,
+      channelId,
+      message: '频道已添加'
+    });
+  } catch (error) {
+    console.error('添加频道失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// 切换频道启用状态
+app.post('/api/monitor/channels/toggle', async (req, res) => {
+  try {
+    const { id, enabled } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供频道ID'
+      });
+    }
+
+    await storage.toggleChannel(id, enabled);
+
+    res.json({
+      success: true,
+      message: `频道已${enabled ? '启用' : '禁用'}`
+    });
+  } catch (error) {
+    console.error('切换频道状态失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// 删除频道
+app.delete('/api/monitor/channels/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await storage.removeChannel(id);
+
+    res.json({
+      success: true,
+      message: '频道已删除'
+    });
+  } catch (error) {
+    console.error('删除频道失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// 手动立即检查
+app.post('/api/monitor/check-now', async (req, res) => {
+  try {
+    if (!scheduler) {
+      return res.status(400).json({
+        success: false,
+        message: '监控服务未初始化'
+      });
+    }
+
+    // 异步执行检查，不阻塞响应
+    setImmediate(() => {
+      scheduler.checkAllChannelsNow();
+    });
+
+    res.json({
+      success: true,
+      message: '正在检查新视频...'
+    });
+  } catch (error) {
+    console.error('手动检查失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// 更新监控配置
+app.post('/api/monitor/config', async (req, res) => {
+  try {
+    const { checkInterval, maxConcurrentDownloads, defaultQuality, fileRetentionDays } = req.body;
+
+    if (checkInterval) config.monitoring.checkInterval = checkInterval;
+    if (maxConcurrentDownloads) config.monitoring.maxConcurrentDownloads = maxConcurrentDownloads;
+    if (defaultQuality) config.monitoring.defaultQuality = defaultQuality;
+    if (fileRetentionDays) config.cleanup.fileRetentionDays = fileRetentionDays;
+
+    res.json({
+      success: true,
+      config: config.monitoring,
+      message: '配置已更新（需重启服务生效）'
+    });
+  } catch (error) {
+    console.error('更新配置失败:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+// =============================================
+// 视频列表和下载管理API
+// =============================================
+
+// 获取频道的视频列表（含下载状态）
+app.get('/api/channels/:channelId/videos', async (req, res) => {
+  try {
+    const { channelId } = req.params;
+    const limit = parseInt(req.query.limit) || 5;
+
+    // 获取频道信息
+    const channels = await storage.getChannels();
+    const channel = channels.find(ch => ch.id === channelId);
+    if (!channel) {
+      return res.status(404).json({ success: false, message: '频道不存在' });
+    }
+
+    // 获取该频道的所有视频（从videos表）
+    const allVideos = Object.values(storage.data.videos)
+      .filter(v => v.channelId === channelId)
+      .sort((a, b) => new Date(b.discoveredAt) - new Date(a.discoveredAt))
+      .slice(0, limit);
+
+    // 为每个视频附加下载状态
+    const videosWithStatus = allVideos.map(video => {
+      // 查找最新的下载记录（优先使用startedAt，其次createdAt）
+      const downloads = storage.data.downloads
+        .filter(dl => dl.videoId === video.id)
+        .sort((a, b) => {
+          const timeA = new Date(a.startedAt || a.createdAt || 0);
+          const timeB = new Date(b.startedAt || b.createdAt || 0);
+          return timeB - timeA;
+        });
+
+      const latestDownload = downloads[0];
+
+      return {
+        ...video,
+        downloadStatus: latestDownload ? latestDownload.status : 'not_started',
+        downloadId: latestDownload?.id,
+        retryCount: latestDownload?.retryCount || 0,
+        errorMessage: latestDownload?.errorMessage,
+        completedAt: latestDownload?.completedAt
+      };
+    });
+
+    res.json({
+      success: true,
+      channel,
+      videos: videosWithStatus,
+      isFirstCheck: !channel.lastCheckAt  // 标记是否首次检查
+    });
+  } catch (error) {
+    console.error('获取频道视频失败:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 手动重试下载
+app.post('/api/downloads/:downloadId/retry', async (req, res) => {
+  try {
+    const { downloadId } = req.params;
+
+    const success = await storage.retryFailedDownload(downloadId);
+
+    if (success) {
+      res.json({ success: true, message: '已加入重试队列' });
+    } else {
+      res.json({ success: false, message: '无法重试（已达到最大重试次数）' });
+    }
+  } catch (error) {
+    console.error('重试失败:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// =============================================
 // Socket.io事件处理
 // =============================================
 io.on('connection', (socket) => {
@@ -617,14 +629,115 @@ io.on('connection', (socket) => {
 // =============================================
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`
 ===========================================
-  YouTube频道批量下载器
+  YouTube频道批量下载器 - 自动监控版
 ===========================================
   服务器运行在: http://localhost:${PORT}
+  `);
 
+  try {
+    // 初始化存储层
+    await storage.init();
+    console.log('✅ 存储层已初始化');
+
+    // 初始化 Telegram 服务
+    telegramService = new TelegramService(config.telegram);
+    await telegramService.init();
+    if (config.telegram.enabled) {
+      console.log('✅ Telegram 通知服务已启动');
+    } else {
+      console.log('ℹ️  Telegram 通知服务已禁用');
+    }
+
+    // 初始化下载队列
+    queueManager = new DownloadQueue(storage, config.monitoring, io, telegramService);
+    await queueManager.start();
+    console.log('✅ 下载队列已启动');
+
+    // 初始化监控调度器
+    scheduler = new MonitoringScheduler(storage, queueManager, config.monitoring, io);
+    if (config.monitoring.enabled) {
+      scheduler.start();
+      console.log('✅ 监控调度器已启动');
+    } else {
+      console.log('ℹ️  监控调度器已禁用（可通过配置启用）');
+    }
+
+    // 初始化清理服务
+    cleanupService = new CleanupService(storage, config.cleanup);
+    cleanupService.start();
+    console.log('✅ 文件清理服务已启动');
+
+    console.log(`
+===========================================
   请在浏览器中打开上述地址开始使用
 ===========================================
   `);
+
+  } catch (error) {
+    console.error('❌ 服务初始化失败:', error);
+    process.exit(1);
+  }
+});
+
+// =============================================
+// 优雅关闭处理
+// =============================================
+process.on('SIGINT', async () => {
+  console.log('\n⚠️  正在关闭服务...');
+
+  try {
+    // 停止调度器
+    if (scheduler) {
+      scheduler.stop();
+      console.log('✓ 调度器已停止');
+    }
+
+    // 停止清理服务
+    if (cleanupService) {
+      cleanupService.stop();
+      console.log('✓ 清理服务已停止');
+    }
+
+    // 停止队列（等待活跃下载完成）
+    if (queueManager) {
+      await queueManager.stop();
+      console.log('✓ 下载队列已停止');
+    }
+
+    // 停止 Telegram 服务
+    if (telegramService) {
+      telegramService.stop();
+      console.log('✓ Telegram 服务已停止');
+    }
+
+    // 最后保存一次存储
+    if (storage) {
+      await storage.save();
+      console.log('✓ 数据已保存');
+    }
+
+    // 关闭服务器
+    server.close(() => {
+      console.log('✅ 服务器已关闭\n');
+      process.exit(0);
+    });
+
+    // 10秒后强制退出
+    setTimeout(() => {
+      console.error('⚠️  强制退出');
+      process.exit(1);
+    }, 10000);
+
+  } catch (error) {
+    console.error('❌ 关闭失败:', error);
+    process.exit(1);
+  }
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n⚠️  收到SIGTERM信号，正在关闭...');
+  process.emit('SIGINT');
 });

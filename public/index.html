@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YouTube频道批量下载器</title>
+  <title>YouTube频道批量下载器 - 自动监控版</title>
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
   <style>
     * {
@@ -359,64 +359,309 @@
         transform: translateY(0);
       }
     }
+
+    /* 监控管理样式 */
+    .monitoring-status {
+      background: #f0f8ff;
+      border: 2px solid #4a90e2;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .status-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status-badge.running {
+      background: #4caf50;
+      color: white;
+    }
+
+    .status-badge.stopped {
+      background: #f44336;
+      color: white;
+    }
+
+    .status-badge.disabled {
+      background: #9e9e9e;
+      color: white;
+    }
+
+    .channel-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px;
+      border-bottom: 1px solid #e0e0e0;
+      transition: background 0.2s;
+    }
+
+    .channel-item:hover {
+      background: #f5f5f5;
+    }
+
+    .channel-item:last-child {
+      border-bottom: none;
+    }
+
+    .channel-info {
+      flex: 1;
+    }
+
+    .channel-info strong {
+      display: block;
+      font-size: 15px;
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .channel-info small {
+      font-size: 12px;
+      color: #999;
+    }
+
+    .channel-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 开关样式 */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: 0.4s;
+      border-radius: 24px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: 0.4s;
+      border-radius: 50%;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background-color: #4caf50;
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(26px);
+    }
+
+    .delete-btn {
+      background: #f44336 !important;
+      padding: 6px 15px !important;
+      font-size: 13px !important;
+      margin: 0 !important;
+    }
+
+    .delete-btn:hover {
+      background: #d32f2f !important;
+    }
+
+    /* 视频列表样式 */
+    .video-list {
+      padding: 10px 15px;
+      background: #f9f9f9;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .video-item-simple {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+
+    .video-item-simple:last-child {
+      margin-bottom: 0;
+    }
+
+    .video-item-simple img {
+      width: 120px;
+      height: 68px;
+      object-fit: cover;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .video-details {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .video-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .video-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .video-discovered {
+      font-size: 11px;
+      color: #999;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-not_started {
+      background: #f5f5f5;
+      color: #999;
+    }
+
+    .status-pending {
+      background: #fff3e0;
+      color: #ff9800;
+    }
+
+    .status-downloading {
+      background: #e3f2fd;
+      color: #2196f3;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    .status-completed {
+      background: #e8f5e9;
+      color: #4caf50;
+    }
+
+    .status-failed {
+      background: #ffebee;
+      color: #f44336;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .retry-btn {
+      background: #ff9800 !important;
+      padding: 4px 12px !important;
+      font-size: 12px !important;
+      margin: 0 !important;
+      border-radius: 4px;
+    }
+
+    .retry-btn:hover {
+      background: #f57c00 !important;
+    }
+
+    .expand-icon {
+      display: inline-block;
+      width: 16px;
+      font-size: 12px;
+      transition: transform 0.3s;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>🎬 YouTube频道批量下载器</h1>
-    <p class="subtitle">轻松批量下载YouTube频道视频，支持多频道、多画质选择</p>
+    <p class="subtitle">支持自动监控频道更新、批量下载视频、多画质选择</p>
 
-    <!-- 步骤1: 输入频道URL -->
-    <section class="step">
-      <h2><span class="step-number">1</span> 输入频道URL</h2>
-      <textarea id="channelUrls" placeholder="请输入YouTube频道URL（每行一个）
+    <!-- 自动监控管理 -->
+    <section class="step" id="monitoringSection">
+      <h2><span class="step-number">⚙️</span> 自动监控管理</h2>
 
-示例：
-https://www.youtube.com/@channelname
-https://www.youtube.com/c/channelname
-https://www.youtube.com/channel/UCxxxxxxxxx"></textarea>
-      <button id="fetchBtn" onclick="fetchVideos()">
-        <span id="fetchBtnText">🔍 获取视频列表</span>
-      </button>
-    </section>
-
-    <!-- 步骤2: 选择视频 -->
-    <section class="step" id="videoSection" style="display:none;">
-      <h2><span class="step-number">2</span> 选择要下载的视频</h2>
-      <div class="controls">
-        <label>
-          <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
-          <strong>全选</strong> (<span id="videoCount">0</span> 个视频)
-        </label>
-        <select id="quality">
-          <option value="1080p">🎥 1080p 高清</option>
-          <option value="720p" selected>🎥 720p 标清（推荐）</option>
-          <option value="480p">🎥 480p 普清</option>
-        </select>
-        <button id="downloadBtn" onclick="startDownload()">⬇️ 开始下载</button>
-      </div>
-      <div id="videoList"></div>
-    </section>
-
-    <!-- 步骤3: 下载进度 -->
-    <section class="step" id="progressSection" style="display:none;">
-      <h2><span class="step-number">3</span> 下载进度</h2>
-      <div class="stats">
-        <div class="stat-item">
-          <div class="stat-value" id="totalCount">0</div>
-          <div class="stat-label">总数</div>
+      <!-- 监控状态 -->
+      <div class="monitoring-status">
+        <div class="status-row">
+          <strong>监控状态:</strong>
+          <span id="monitoringStatus" class="status-badge">加载中...</span>
+          <button onclick="checkNow()" style="margin-left: 10px; padding: 8px 20px;">🔄 立即检查</button>
         </div>
-        <div class="stat-item">
-          <div class="stat-value" id="completedCount">0</div>
-          <div class="stat-label">已完成</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value" id="failedCount">0</div>
-          <div class="stat-label">失败</div>
+        <div class="status-row">
+          <strong>下载队列:</strong>
+          <span id="queueStatus">等待中 0, 下载中 0</span>
         </div>
       </div>
-      <div id="downloadProgress"></div>
+
+      <!-- 添加频道 -->
+      <div class="add-channel-form">
+        <h3 style="margin: 20px 0 10px 0; font-size: 16px; color: #555;">添加监控频道</h3>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <input type="text" id="monitorChannelUrl" placeholder="YouTube频道URL"
+                 style="flex: 1; min-width: 300px; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px;">
+          <input type="text" id="monitorChannelName" placeholder="频道名称（可选）"
+                 style="flex: 1; min-width: 200px; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px;">
+          <button onclick="addMonitorChannel()" style="padding: 10px 25px;">➕ 添加</button>
+        </div>
+      </div>
+
+      <!-- 频道列表 -->
+      <div class="monitored-channels">
+        <h3 style="margin: 20px 0 10px 0; font-size: 16px; color: #555;">
+          已监控频道 (<span id="channelCount">0</span>)
+        </h3>
+        <div id="channelList" style="border: 1px solid #e0e0e0; border-radius: 6px; background: white; min-height: 100px;">
+          <div style="padding: 20px; text-align: center; color: #999;">暂无监控频道</div>
+        </div>
+      </div>
     </section>
+
   </div>
 
   <script>
@@ -848,6 +1093,434 @@ https://www.youtube.com/channel/UCxxxxxxxxx"></textarea>
         dateElem.innerHTML = `📅 <span style="color: #999;">获取失败</span>`;
       }
     }
+
+    // ==========================================
+    // 监控管理功能
+    // ==========================================
+
+    // 加载监控状态
+    async function loadMonitoringStatus() {
+      try {
+        const response = await fetch('/api/monitor/status');
+        const result = await response.json();
+
+        if (result.success) {
+          updateMonitoringUI(result);
+        }
+      } catch (error) {
+        console.error('加载监控状态失败:', error);
+      }
+    }
+
+    // 更新监控UI
+    function updateMonitoringUI(data) {
+      // 更新监控状态
+      const statusBadge = document.getElementById('monitoringStatus');
+      const isRunning = data.monitoring?.status?.running;
+      const isEnabled = data.monitoring?.enabled;
+
+      if (isEnabled && isRunning) {
+        statusBadge.textContent = '运行中';
+        statusBadge.className = 'status-badge running';
+      } else if (isEnabled && !isRunning) {
+        statusBadge.textContent = '已停止';
+        statusBadge.className = 'status-badge stopped';
+      } else {
+        statusBadge.textContent = '已禁用';
+        statusBadge.className = 'status-badge disabled';
+      }
+
+      // 更新队列状态
+      if (data.queue) {
+        document.getElementById('queueStatus').textContent =
+          `等待中 ${data.queue.pending || 0}, 下载中 ${data.queue.active || 0}`;
+      }
+
+      // 更新频道列表
+      if (data.channels) {
+        renderChannels(data.channels);
+      }
+    }
+
+    // 渲染频道列表
+    function renderChannels(channels) {
+      const channelList = document.getElementById('channelList');
+      document.getElementById('channelCount').textContent = channels.length;
+
+      if (channels.length === 0) {
+        channelList.innerHTML = '<div style="padding: 20px; text-align: center; color: #999;">暂无监控频道</div>';
+        return;
+      }
+
+      const html = channels.map(ch => `
+        <div class="channel-item">
+          <div class="channel-info" onclick="toggleVideos('${ch.id}')" style="cursor: pointer;">
+            <strong>
+              <span class="expand-icon" id="icon-${ch.id}">▶</span>
+              ${escapeHtml(ch.name || ch.url)}
+            </strong>
+            <small>
+              ${ch.url}<br>
+              最后检查: ${ch.lastCheckAt ? new Date(ch.lastCheckAt).toLocaleString('zh-CN') : '从未'}
+            </small>
+          </div>
+          <div class="channel-actions">
+            <label class="toggle-switch">
+              <input type="checkbox" ${ch.enabled ? 'checked' : ''}
+                     onchange="toggleChannel('${ch.id}', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <button class="delete-btn" onclick="removeChannel('${ch.id}')">删除</button>
+          </div>
+        </div>
+        <!-- 视频列表（默认隐藏） -->
+        <div class="video-list" id="videos-${ch.id}" style="display: none;">
+          <div class="loading">加载中...</div>
+        </div>
+      `).join('');
+
+      channelList.innerHTML = html;
+    }
+
+    // HTML转义（防止XSS）
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // 添加监控频道
+    async function addMonitorChannel() {
+      const url = document.getElementById('monitorChannelUrl').value.trim();
+      const name = document.getElementById('monitorChannelName').value.trim();
+
+      if (!url) {
+        alert('❌ 请输入频道URL');
+        return;
+      }
+
+      // 简单验证URL格式
+      if (!url.includes('youtube.com')) {
+        alert('❌ 请输入有效的YouTube频道URL');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/monitor/channels/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, name })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert('✅ 频道已添加到监控列表');
+          document.getElementById('monitorChannelUrl').value = '';
+          document.getElementById('monitorChannelName').value = '';
+          loadMonitoringStatus();
+        } else {
+          alert('❌ ' + result.message);
+        }
+      } catch (error) {
+        console.error('添加频道失败:', error);
+        alert('❌ 添加频道失败: ' + error.message);
+      }
+    }
+
+    // 切换频道开关
+    async function toggleChannel(id, enabled) {
+      try {
+        const response = await fetch('/api/monitor/channels/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, enabled })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          console.log(`✅ 频道已${enabled ? '启用' : '禁用'}`);
+          loadMonitoringStatus();
+        } else {
+          alert('❌ ' + result.message);
+          loadMonitoringStatus(); // 重新加载以恢复开关状态
+        }
+      } catch (error) {
+        console.error('切换频道状态失败:', error);
+        alert('❌ 操作失败: ' + error.message);
+        loadMonitoringStatus();
+      }
+    }
+
+    // 删除频道
+    async function removeChannel(id) {
+      if (!confirm('确定要删除此频道吗？')) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/monitor/channels/${id}`, {
+          method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert('✅ 频道已删除');
+          loadMonitoringStatus();
+        } else {
+          alert('❌ ' + result.message);
+        }
+      } catch (error) {
+        console.error('删除频道失败:', error);
+        alert('❌ 删除失败: ' + error.message);
+      }
+    }
+
+    // 手动立即检查
+    async function checkNow() {
+      try {
+        const response = await fetch('/api/monitor/check-now', {
+          method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert('✅ ' + result.message);
+        } else {
+          alert('❌ ' + result.message);
+        }
+      } catch (error) {
+        console.error('手动检查失败:', error);
+        alert('❌ 检查失败: ' + error.message);
+      }
+    }
+
+    // ==========================================
+    // 视频列表展开/折叠功能
+    // ==========================================
+
+    // 切换视频列表显示
+    async function toggleVideos(channelId) {
+      const videoList = document.getElementById(`videos-${channelId}`);
+      const icon = document.getElementById(`icon-${channelId}`);
+
+      if (videoList.style.display === 'none') {
+        // 展开：加载视频列表
+        icon.textContent = '▼';
+        videoList.style.display = 'block';
+        await loadChannelVideos(channelId);
+      } else {
+        // 折叠
+        icon.textContent = '▶';
+        videoList.style.display = 'none';
+      }
+    }
+
+    // 加载频道视频列表
+    async function loadChannelVideos(channelId) {
+      const videoList = document.getElementById(`videos-${channelId}`);
+
+      try {
+        const response = await fetch(`/api/channels/${channelId}/videos?limit=5`);
+        const result = await response.json();
+
+        if (result.success) {
+          if (result.isFirstCheck && result.videos.length === 0) {
+            // 频道从未检查过
+            videoList.innerHTML = `
+              <div style="padding: 20px; text-align: center; color: #999;">
+                <p>⏳ 该频道尚未进行首次检查</p>
+                <p style="font-size: 12px; margin-top: 5px;">请点击上方的"🔄 立即检查"按钮开始监控</p>
+              </div>
+            `;
+          } else if (result.videos.length > 0) {
+            renderVideoList(channelId, result.videos);
+          } else {
+            // 已检查但暂无视频
+            videoList.innerHTML = '<div style="padding: 15px; color: #999;">✓ 该频道暂无新视频</div>';
+          }
+        } else {
+          videoList.innerHTML = `<div style="padding: 15px; color: #f44336;">❌ ${result.message || '加载失败'}</div>`;
+        }
+      } catch (error) {
+        console.error('加载视频失败:', error);
+        videoList.innerHTML = `
+          <div style="padding: 15px; text-align: center;">
+            <p style="color: #f44336;">❌ 加载失败</p>
+            <button onclick="loadChannelVideos('${channelId}')" style="margin-top: 10px; padding: 6px 15px; font-size: 13px;">
+              🔄 重试
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    // 渲染视频列表
+    function renderVideoList(channelId, videos) {
+      const videoList = document.getElementById(`videos-${channelId}`);
+
+      const html = videos.map(video => {
+        const statusInfo = getStatusDisplay(video.downloadStatus);
+        const canRetry = video.downloadStatus === 'failed' && video.retryCount < 2;
+
+        return `
+          <div class="video-item-simple">
+            <img src="${video.thumbnail}" alt="${escapeHtml(video.title)}">
+            <div class="video-details">
+              <div class="video-title">${escapeHtml(video.title)}</div>
+              <div class="video-meta">
+                <span class="status-badge status-${video.downloadStatus}" data-video-id="${video.id}">
+                  ${statusInfo.icon} ${statusInfo.text}
+                </span>
+                ${canRetry ? `<button class="retry-btn" onclick="retryDownload('${video.downloadId}', '${channelId}')">🔄 重试</button>` : ''}
+              </div>
+              <div class="video-discovered">
+                发现于 ${formatDiscoveredTime(video.discoveredAt)}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      videoList.innerHTML = html;
+    }
+
+    // 格式化发现时间
+    function formatDiscoveredTime(dateString) {
+      if (!dateString) return '未知时间';
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return '刚刚';
+      if (diffMins < 60) return `${diffMins}分钟前`;
+      if (diffHours < 24) return `${diffHours}小时前`;
+      if (diffDays < 7) return `${diffDays}天前`;
+
+      return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+    }
+
+    // 获取状态显示
+    function getStatusDisplay(status) {
+      const statusMap = {
+        'not_started': { icon: '⏸️', text: '未下载', color: '#999' },
+        'pending': { icon: '⏳', text: '队列中', color: '#ff9800' },
+        'downloading': { icon: '⬇️', text: '下载中', color: '#2196f3' },
+        'completed': { icon: '✅', text: '已完成', color: '#4caf50' },
+        'failed': { icon: '❌', text: '失败', color: '#f44336' }
+      };
+      return statusMap[status] || statusMap['not_started'];
+    }
+
+    // 手动重试下载
+    async function retryDownload(downloadId, channelId) {
+      try {
+        const response = await fetch(`/api/downloads/${downloadId}/retry`, {
+          method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          alert('✅ 已加入重试队列');
+          // 刷新视频列表
+          await loadChannelVideos(channelId);
+        } else {
+          alert('❌ ' + result.message);
+        }
+      } catch (error) {
+        console.error('重试失败:', error);
+        alert('❌ 重试失败: ' + error.message);
+      }
+    }
+
+    // ==========================================
+    // Socket.io 监控事件监听
+    // ==========================================
+
+    // 监控新视频事件
+    socket.on('monitoring:new-video', (data) => {
+      console.log('🆕 发现新视频:', data);
+      loadMonitoringStatus();
+    });
+
+    // 监控检查完成事件
+    socket.on('monitoring:check-complete', (data) => {
+      console.log('✅ 监控检查完成:', data);
+      if (data.newVideos > 0) {
+        alert(`🆕 发现 ${data.newVideos} 个新视频，已加入下载队列`);
+
+        // 如果有对应频道的视频列表已展开，自动刷新
+        if (data.channelId) {
+          const videoList = document.getElementById(`videos-${data.channelId}`);
+          if (videoList && videoList.style.display !== 'none') {
+            console.log(`🔄 自动刷新频道 ${data.channelId} 的视频列表`);
+            loadChannelVideos(data.channelId);
+          }
+        }
+      }
+      loadMonitoringStatus();
+    });
+
+    // 队列状态更新
+    socket.on('queue:status', (data) => {
+      document.getElementById('queueStatus').textContent =
+        `等待中 ${data.pending || 0}, 下载中 ${data.active || 0}`;
+    });
+
+    // 配置更新事件
+    socket.on('config:updated', (data) => {
+      console.log('📝 配置已更新:', data);
+      loadMonitoringStatus();
+    });
+
+    // ==========================================
+    // Socket.io 下载状态实时更新
+    // ==========================================
+
+    // 下载进度更新
+    socket.on('download:progress', (data) => {
+      console.log('⬇️ 下载进度更新:', data);
+      updateVideoStatus(data.videoId, 'downloading');
+    });
+
+    // 下载完成
+    socket.on('download:complete', (data) => {
+      console.log('✅ 下载完成:', data);
+      updateVideoStatus(data.videoId, 'completed');
+    });
+
+    // 下载失败
+    socket.on('download:failed', (data) => {
+      console.log('❌ 下载失败:', data);
+      updateVideoStatus(data.videoId, 'failed');
+    });
+
+    // 更新视频状态徽章
+    function updateVideoStatus(videoId, status) {
+      const statusBadges = document.querySelectorAll(`[data-video-id="${videoId}"]`);
+      statusBadges.forEach(badge => {
+        const statusInfo = getStatusDisplay(status);
+        badge.className = `status-badge status-${status}`;
+        badge.innerHTML = `${statusInfo.icon} ${statusInfo.text}`;
+      });
+    }
+
+    // ==========================================
+    // 页面加载时初始化
+    // ==========================================
+
+    // 初始化监控状态
+    loadMonitoringStatus();
+
+    // 每30秒刷新一次状态
+    setInterval(loadMonitoringStatus, 30000);
 
     // ==========================================
     // 页面卸载时取消任务
